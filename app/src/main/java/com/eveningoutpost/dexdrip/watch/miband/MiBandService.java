@@ -104,7 +104,7 @@ import static com.eveningoutpost.dexdrip.xdrip.gs;
  */
 
 public class MiBandService extends JamBaseBluetoothSequencer {
-    private static final boolean d = true;
+    public static final boolean d = true;
 
     private static final long RETRY_PERIOD_MS = Constants.SECOND_IN_MS * 30; // sleep for max ms if we have had no signal
     private static final long BG_UPDATE_DATA_LOSS_INTERVAL = 15 * Constants.MINUTE_IN_MS; //minutes, update miband display to show data loss
@@ -987,20 +987,14 @@ public class MiBandService extends JamBaseBluetoothSequencer {
         if (d)
             UserError.Log.d(TAG, "Begin uploading Watchface, lenght: " + firmware.getSize());
 
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            UserError.Log.d(TAG, "Requesting high priority connection");
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                requestConnectionPriority(connection, BluetoothGatt.CONNECTION_PRIORITY_HIGH);
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (d)
+                UserError.Log.d(TAG, "Requesting high priority connection");
+            requestConnectionPriority(connection, BluetoothGatt.CONNECTION_PRIORITY_HIGH);
         }
         firmware.nextSequence();
         processFirmwareSequence();
-
-
     }
-
 
     private void processFirmwareSequence() {
         RxBleConnection connection = I.connection;
@@ -1198,7 +1192,6 @@ public class MiBandService extends JamBaseBluetoothSequencer {
             }
             resetFirmwareState(false, errorMessage);
             if (sendBGNotification) {
-                emptyQueue();
                 JoH.startService(MiBandService.class, "function", "update_bg_as_notification");
                 changeState(SLEEP);
             }
@@ -1257,37 +1250,64 @@ public class MiBandService extends JamBaseBluetoothSequencer {
         if (d)
             UserError.Log.d(TAG, "Firmware packet lengh: " + packetLength);
         int packets = len / packetLength;
+
         // going from 0 to len
         int firmwareProgress = 0;
         for (int i = 0; i < packets; i++) {
             byte[] fwChunk = Arrays.copyOfRange(fwbytes, i * packetLength, i * packetLength + packetLength);
-            sendFirmwareCommand(firmware.getFirmwareDataCharacteristicUUID(), fwChunk, "Chunk:" + i).queue();
+            int finalI = i;
+            I.connection.writeCharacteristic(firmware.getFirmwareDataCharacteristicUUID(), fwChunk).subscribe(val -> {
+                        if (d)
+                            UserError.Log.d(TAG, "Wrote Chunk:" + finalI);
+                    },
+                    throwable -> {
+                        if (d)
+                            UserError.Log.e(TAG, "Could not write fwChunk: " + throwable);
+                        resetFirmwareState(false);
+                    }
+            );
             firmwareProgress += packetLength;
             int progressPercent = (int) ((((float) firmwareProgress) / len) * 100);
             if ((i > 0) && (i % FirmwareOperations.FIRMWARE_SYNC_PACKET == 0)) {
-                sendFirmwareCommand(firmware.getFirmwareCharacteristicUUID(), firmware.getSyncCommand(), "Sync " + progressPercent + "%").queue();
+                I.connection.writeCharacteristic(firmware.getFirmwareCharacteristicUUID(), firmware.getSyncCommand()).subscribe(val -> {
+                            if (d)
+                                UserError.Log.d(TAG, "Wrote Sync" + progressPercent + "%");
+                        },
+                        throwable -> {
+                            if (d)
+                                UserError.Log.e(TAG, "Could not write Sync: " + throwable);
+                            resetFirmwareState(false);
+                        }
+                );
             }
         }
         if (firmwareProgress < len) { //last chunk
-            int progressPercent = 100;
             byte[] fwChunk = Arrays.copyOfRange(fwbytes, packets * packetLength, len);
-            sendFirmwareCommand(firmware.getFirmwareDataCharacteristicUUID(), fwChunk, "Last chunk").queue();
+            I.connection.writeCharacteristic(firmware.getFirmwareDataCharacteristicUUID(), fwChunk)
+                    .subscribe(val -> {
+                                if (d)
+                                    UserError.Log.d(TAG, "Wrote fwChunk");
+                            },
+                            throwable -> {
+                                if (d)
+                                    UserError.Log.e(TAG, "Could not write fwChunk: " + throwable);
+                                resetFirmwareState(false);
+                            }
+                    );
         }
-        sendFirmwareCommand(firmware.getFirmwareCharacteristicUUID(), firmware.getChecksumCommand(), "getChecksumCommand").setRunnable(new Runnable() {
-            @Override
-            public void run() {
-                firmware.nextSequence();
-            }
-        }).send();
-    }
 
-    QueueMe sendFirmwareCommand(final UUID uuid, final byte[] bytes, String info) {
-        return new QueueMe()
-                .setBytes(bytes)
-                .setDescription(info)
-                .setQueueWriteCharacterstic(uuid)
-                .expireInSeconds(400)
-                .setDelayMs(0);
+        I.connection.writeCharacteristic(firmware.getFirmwareCharacteristicUUID(), firmware.getChecksumCommand())
+                .subscribe(val -> {
+                            if (d)
+                                UserError.Log.d(TAG, "Wrote getChecksumCommand");
+                            firmware.nextSequence();
+                        },
+                        throwable -> {
+                            if (d)
+                                UserError.Log.e(TAG, "Could not write getChecksumCommand: " + throwable);
+                            resetFirmwareState(false);
+                        }
+                );
     }
 
     private void setNightMode() {
