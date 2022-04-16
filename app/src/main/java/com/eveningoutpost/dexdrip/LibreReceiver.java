@@ -74,7 +74,7 @@ public class LibreReceiver extends BroadcastReceiver {
                         if (prefs == null)
                             prefs = PreferenceManager.getDefaultSharedPreferences(context);
 
-                        final Bundle bundle = intent.getExtras();
+//                        final Bundle bundle = intent.getExtras();
                         //  BundleScrubber.scrub(bundle);
                         final String action = intent.getAction();
 

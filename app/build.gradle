@@ -12,8 +12,8 @@ buildscript {
     }
 }
 apply plugin: 'com.android.application'
-apply plugin: 'kotlin-android'
 apply from: 'token-replace.gradle'
+apply plugin: 'kotlin-android'
 
 if (project.file('local.gradle').exists()) {
     apply from: 'local.gradle'
@@ -62,7 +62,7 @@ def generateVersionNumber = { ->
 
 def generateVersionNumberString = { ->
     StringBuilder stringBuilder = new StringBuilder()
-    stringBuilder.append((new Date()).format('yyMMddHHmm'))
+    stringBuilder.append((new Date()).format('yyMMddHH'))
     return stringBuilder.toString()
 }
 
